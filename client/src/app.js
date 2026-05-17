@@ -226,38 +226,69 @@ class InterviewCoachClient {
     try {
       const transport = await createTransport(this.transportType);
 
+      const self = this;
+
       this.client = new PipecatClient({
         transport,
         enableMic: true,
         enableCam: false,
         callbacks: {
-          onConnected:             () => this._onConnected(),
-          onDisconnected:          () => this._onDisconnected(),
-          onTransportStateChanged: (s) => this._logEvent('transport-state', s),
+          onConnected:             () => self._onConnected(),
+          onDisconnected:          () => self._onDisconnected(),
+          onTransportStateChanged: (s) => self._logEvent('transport-state', s),
           onBotReady:              () => {
-            this._logEvent('bot-ready', 'Bot is ready');
-            this._setPhase('Introduction');
+            self._logEvent('bot-ready', 'Bot is ready');
+            self._setPhase('Introduction');
           },
           onUserTranscript: (data) => {
             if (data.final) {
-              this._addChatMessage('user', data.text);
+              self._addChatMessage('user', data.text);
             }
           },
           onBotTranscript: (data) => {
-            this._addChatMessage('bot', data.text);
-            this._detectPhase(data.text);
+            self._addChatMessage('bot', data.text);
+            self._detectPhase(data.text);
           },
           onError: (err) => {
-            this._logEvent('error', err.message);
+            self._logEvent('error', err.message);
             toast(`Error: ${err.message}`, 'error');
+          },
+          // Primary audio/video track handler (official callbacks API)
+          onTrackStarted: (track, participant) => {
+            self._logEvent('track-event', `kind=${track.kind} local=${participant?.local ?? 'n/a'} id=${track.id.slice(0,8)}`);
+            if (participant?.local === true) return;
+            if (track.kind === 'audio') self._attachBotAudio(track);
+            else if (track.kind === 'video') self._setupVideo(track);
+          },
+          onTrackStopped: (track, participant) => {
+            if (!participant?.local && track.kind === 'video') self._clearVideo();
+          },
+          onBotStartedSpeaking: () => {
+            self.$speakingIndicator.classList.add('active');
+            self._logEvent('bot-speaking', 'Bot started speaking');
+            // Resume audio context if suspended (e.g. after page idle)
+            const audioEl = document.getElementById('bot-audio-el');
+            if (audioEl && audioEl.paused) {
+              audioEl.play().catch(() => {});
+            }
+          },
+          onBotStoppedSpeaking: () => {
+            self.$speakingIndicator.classList.remove('active');
           },
         },
       });
 
+      // Belt-and-suspenders: also listen via .on() in case callbacks miss it
       this._setupAudio();
 
       const connectParams = TRANSPORT_CONFIG[this.transportType];
       await this.client.connect(connectParams);
+
+      // ── Native WebRTC track interception ─────────────────────────────────
+      // RTVIEvent.TrackStarted and callbacks.onTrackStarted do NOT fire
+      // reliably in @pipecat-ai/client-js v1.5.0 + SmallWebRTC.
+      // Hook directly into the RTCPeerConnection instead — this always fires.
+      this._hookNativeWebRTC();
     } catch (err) {
       this._logEvent('error', err.message);
       toast(`Connection failed: ${err.message}`, 'error');
@@ -274,51 +305,172 @@ class InterviewCoachClient {
 
   // ── Audio / video setup ───────────────────────────────────
 
-  _setupAudio() {
-    this.client.on(RTVIEvent.TrackStarted, (track, participant) => {
-      // participant.local is true for the user's own mic/cam tracks — skip those.
-      // Guard defensively: if participant is undefined, assume it's the bot.
-      const isLocal = participant?.local === true;
-      if (isLocal) return;
+  _hookNativeWebRTC() {
+    // Walk every possible property path to find the RTCPeerConnection.
+    // The SmallWebRTC transport stores it under different keys across versions.
+    const transport = this.client?.transport;
+    const pc = (
+      transport?.peerConnection      ||   // most common
+      transport?._peerConnection     ||
+      transport?.pc                  ||
+      transport?._pc                 ||
+      transport?.connection?.pc      ||
+      transport?.connection?._pc     ||
+      transport?.connection?.peerConnection ||
+      null
+    );
 
-      if (track.kind === 'audio') {
-        this._logEvent('track', 'Bot audio started — attaching to <audio> element');
+    if (!pc) {
+      this._logEvent('webrtc-warn', 'Could not find RTCPeerConnection — trying again in 500ms');
+      // Retry once — the transport may not have set up the PC yet
+      setTimeout(() => {
+        const pc2 = (
+          this.client?.transport?.peerConnection ||
+          this.client?.transport?._peerConnection ||
+          this.client?.transport?.pc ||
+          this.client?.transport?.connection?.pc ||
+          null
+        );
+        if (pc2) {
+          this._attachPCTrackListener(pc2);
+        } else {
+          this._logEvent('webrtc-warn', 'RTCPeerConnection still not found after retry — audio may be silent');
+        }
+      }, 500);
+      return;
+    }
 
-        // Remove any stale audio element from a previous session
-        const existing = document.getElementById('bot-audio-el');
-        if (existing) existing.remove();
+    this._attachPCTrackListener(pc);
+  }
 
-        const audio = document.createElement('audio');
-        audio.id = 'bot-audio-el';
-        audio.autoplay = true;
-        audio.playsInline = true;
-        // Do NOT set audio.muted — that would silence everything
-        audio.srcObject = new MediaStream([track]);
-        document.body.appendChild(audio);
+  _attachPCTrackListener(pc) {
+    this._logEvent('webrtc-pc', `Found RTCPeerConnection (signalingState=${pc.signalingState})`);
 
-        // Browsers require a Promise-safe .play() call after setting srcObject
-        audio.play().catch((err) => {
-          this._logEvent('audio-error', `play() blocked: ${err.message} — click anywhere on the page`);
-          // Fallback: play on next user gesture
-          const resume = () => { audio.play().catch(() => {}); document.removeEventListener('click', resume); };
-          document.addEventListener('click', resume);
-        });
-
-      } else if (track.kind === 'video') {
-        this._logEvent('track', 'Bot video started');
-        this._setupVideo(track);
+    // Check for already-existing remote audio tracks (in case ontrack already fired)
+    if (pc.getReceivers) {
+      for (const receiver of pc.getReceivers()) {
+        if (receiver.track?.kind === 'audio' && receiver.track.readyState === 'live') {
+          this._logEvent('webrtc-track', 'Found existing live audio receiver — attaching now');
+          this._attachBotAudio(receiver.track);
+          return;
+        }
       }
+    }
+
+    // Listen for new tracks
+    const existingHandler = pc.ontrack;
+    pc.ontrack = (evt) => {
+      this._logEvent('webrtc-ontrack', `kind=${evt.track.kind} state=${evt.track.readyState} streams=${evt.streams.length}`);
+
+      if (evt.track.kind === 'audio') {
+        // Prefer the stream's audio track if available — it's already in a MediaStream
+        if (evt.streams && evt.streams[0]) {
+          const audioTracks = evt.streams[0].getAudioTracks();
+          if (audioTracks.length > 0) {
+            this._logEvent('webrtc-audio', 'Using stream audio track');
+            this._attachBotAudio(audioTracks[0]);
+          } else {
+            this._attachBotAudio(evt.track);
+          }
+        } else {
+          this._attachBotAudio(evt.track);
+        }
+      } else if (evt.track.kind === 'video') {
+        this._setupVideo(evt.track);
+      }
+
+      // Call any existing handler too
+      if (typeof existingHandler === 'function') existingHandler(evt);
+    };
+
+    this._logEvent('webrtc-pc', 'Native ontrack listener attached ✓');
+  }
+
+  // _attachBotAudio: called by both callbacks.onTrackStarted AND .on() fallback
+  _attachBotAudio(track) {
+    // Guard: skip local mic tracks
+    if (track.kind !== 'audio') return;
+
+    // Avoid re-attaching the same track
+    if (this._attachedTrackId === track.id) {
+      this._logEvent('audio-info', 'Same track already attached — skipping');
+      return;
+    }
+    this._attachedTrackId = track.id;
+
+    this._logEvent('audio-attached', `Track ${track.id.slice(0, 8)} — routing via Web Audio API`);
+
+    // ── Web Audio API approach ───────────────────────────────────────────────
+    // Bypasses Chrome's autoplay policy on <audio> elements entirely.
+    // AudioContext created/resumed after a user gesture always runs immediately.
+    try {
+      // Reuse existing context if still running; create fresh otherwise
+      if (!this._audioCtx || this._audioCtx.state === 'closed') {
+        this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      const ctx = this._audioCtx;
+
+      const doConnect = () => {
+        // Disconnect any previous source node
+        if (this._audioSource) {
+          try { this._audioSource.disconnect(); } catch (_) {}
+        }
+
+        const stream = new MediaStream([track]);
+        this._audioSource = ctx.createMediaStreamSource(stream);
+        this._audioSource.connect(ctx.destination);
+
+        this._logEvent('audio-ok', `Web Audio connected — ctx.state=${ctx.state} ✓`);
+
+        // Also keep the <audio> element in sync as a fallback (muted so no double-play)
+        const audioEl = document.getElementById('bot-audio-el');
+        if (audioEl) {
+          audioEl.srcObject = stream;
+          audioEl.muted = true;  // Web Audio handles output; prevent doubling
+          audioEl.play().catch(() => {});
+        }
+      };
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(() => {
+          this._logEvent('audio-ctx', `AudioContext resumed — state=${ctx.state}`);
+          doConnect();
+        }).catch((err) => {
+          this._logEvent('audio-ctx-error', `resume() failed: ${err.message}`);
+          doConnect(); // try anyway
+        });
+      } else {
+        doConnect();
+      }
+
+    } catch (err) {
+      this._logEvent('audio-error', `Web Audio setup failed: ${err.message} — falling back to <audio>`);
+
+      // Hard fallback: plain <audio> element
+      const audioEl = document.getElementById('bot-audio-el');
+      if (audioEl) {
+        audioEl.srcObject = new MediaStream([track]);
+        audioEl.muted = false;
+        audioEl.volume = 1.0;
+        audioEl.play().catch((e) => this._logEvent('audio-fallback-error', e.message));
+      }
+    }
+  }
+
+  _setupAudio() {
+    // Fallback: .on() listener in case callbacks.onTrackStarted didn't fire
+    this.client.on(RTVIEvent.TrackStarted, (track, participant) => {
+      this._logEvent('on-track', `kind=${track.kind} local=${participant?.local ?? 'n/a'}`);
+      if (participant?.local === true) return;
+      if (track.kind === 'audio') this._attachBotAudio(track);
+      else if (track.kind === 'video') this._setupVideo(track);
     });
 
     this.client.on(RTVIEvent.TrackStopped, (track, participant) => {
-      const isLocal = participant?.local === true;
-      if (!isLocal && track.kind === 'video') {
-        this._logEvent('track', 'Bot video stopped');
-        this._clearVideo();
-      }
+      if (!participant?.local && track.kind === 'video') this._clearVideo();
     });
 
-    // Speaking animation
     this.client.on(RTVIEvent.BotStartedSpeaking, () => {
       this.$speakingIndicator.classList.add('active');
     });
@@ -384,6 +536,11 @@ class InterviewCoachClient {
     this.$speakingIndicator.classList.remove('active');
     this._logEvent('disconnected', `Duration: ${fmtTime(this._sessionSeconds)}`);
     toast(`Interview ended — ${fmtTime(this._sessionSeconds)} elapsed`, 'info', 4000);
+
+    // Clean up Web Audio
+    this._attachedTrackId = null;
+    if (this._audioSource) { try { this._audioSource.disconnect(); } catch (_) {} this._audioSource = null; }
+    if (this._audioCtx)    { try { this._audioCtx.close(); }         catch (_) {} this._audioCtx = null; }
 
     // Auto-save transcript to server (fire & forget)
     this._pushTranscript();
