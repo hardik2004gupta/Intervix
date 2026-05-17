@@ -81,7 +81,8 @@ cp server/.env.example server/.env
 
 # Install Python dependencies (requires Python 3.10+)
 cd server
-pip install uv        # if not already installed
+uv python install 3.13   # uv downloads 3.13 internally
+uv python pin 3.13
 uv sync
 
 # Start the bot server + config API
