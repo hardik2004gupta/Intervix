@@ -1,0 +1,13 @@
+{
+  "botNature": "decent",
+  "jd": "Design, develop, and optimize embedded software and firmware for hardware devices and real-time systems. Work closely with hardware teams to build efficient, reliable, and low-level system solutions for products involving microcontrollers, IoT devices, and electronic systems.",
+  "interviewType": "mixed",
+  "difficulty": "mid",
+  "maxQuestions": 8,
+  "focusAreas": [
+    "Embedded Systems",
+    "Microcontrollers"
+  ],
+  "companyName": "Qualcomm",
+  "roleName": "Embedded Systems Engineer"
+}

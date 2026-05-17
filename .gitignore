@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.ruff_cache/
+.pyright/
+
+# Environment
+.env
+server/.env
+client/.env
+client/.env.production
+
+# Node
+node_modules/
+client/dist/
+client/.vite/
+
+# Runtime data
+server/last_session_transcript.json
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

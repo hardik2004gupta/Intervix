@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Python lint + type check ────────────────────────────────
+  python:
+    name: Python (lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dev dependencies
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  # ── Node build ──────────────────────────────────────────────
+  node:
+    name: Node (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_BOT_START_URL: http://localhost:7860/start
+          VITE_CONFIG_SERVER_URL: http://localhost:7861
+
+  # ── Docker build check ──────────────────────────────────────
+  docker:
+    name: Docker (build check)
+    runs-on: ubuntu-latest
+    needs: [python]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build server image
+        run: docker build ./server -t interview-coach-server:ci

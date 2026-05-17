@@ -1,0 +1,38 @@
+[project]
+name = "interview-coach"
+version = "0.2.0"
+description = "AI Interview Coach — Pipecat voice agent"
+requires-python = ">=3.10,<3.14"  # onnxruntime (silero VAD) has no 3.14 wheel yet
+dependencies = [
+    "aiohttp>=3.13.3",
+    "loguru>=0.7.3",
+    # daily extra omitted — daily-python has no Windows wheel.
+    # Add it back on Linux/macOS by running: uv add "pipecat-ai[daily]"
+    # silero + local-smart-turn-v3 need onnxruntime which has no Python 3.14 wheel.
+    # Both are imported conditionally in bot.py and fall back gracefully.
+    "pipecat-ai[deepgram,elevenlabs,groq,local-smart-turn-v3,runner,silero,webrtc]",
+    "pipecatcloud",
+    # daily-python only installs on Linux/macOS — safe to list here;
+    # uv/pip silently skips it on Windows because of the platform marker.
+    "daily-python>=0.22.0 ; sys_platform != 'win32'",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.404,<2",
+    "ruff>=0.12.11,<1",
+]
+
+[tool.uv]
+# Tell uv which environments to resolve for.
+# On Windows we only need the webrtc (SmallWebRTC) transport.
+environments = [
+    "sys_platform == 'win32'",
+    "sys_platform == 'linux'",
+    "sys_platform == 'darwin'",
+]
+
+[tool.ruff]
+line-length = 100
+[tool.ruff.lint]
+select = ["I"]

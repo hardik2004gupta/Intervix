@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Interview Coach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+
+<body>
+  <!-- ── Sidebar: Config ───────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="brand">
+        <span class="brand-icon">🤖</span>
+        <span class="brand-name">Interview Coach</span>
+      </div>
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Collapse panel">‹</button>
+    </div>
+
+    <div class="sidebar-body" id="sidebar-body">
+
+      <!-- Transport -->
+      <div class="form-section">
+        <div class="section-label">Connection</div>
+        <div class="field-group">
+          <label class="field-label" for="transport-select">Transport</label>
+          <select id="transport-select" class="field-select">
+            <option value="smallwebrtc">SmallWebRTC (local)</option>
+            <option value="daily">Daily (cloud)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Interview Setup -->
+      <div class="form-section">
+        <div class="section-label">Interview Setup</div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label" for="bot-nature-select">Interviewer Style</label>
+            <select id="bot-nature-select" class="field-select">
+              <option value="friendly">😊 Friendly</option>
+              <option value="decent" selected>🧑‍💼 Professional</option>
+              <option value="strict">⚡ Strict</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="difficulty-select">Seniority</label>
+            <select id="difficulty-select" class="field-select">
+              <option value="junior">Junior</option>
+              <option value="mid" selected>Mid-Level</option>
+              <option value="senior">Senior</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label" for="interview-type-select">Interview Type</label>
+            <select id="interview-type-select" class="field-select">
+              <option value="mixed" selected>Mixed</option>
+              <option value="technical">Technical</option>
+              <option value="behavioral">Behavioral</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="max-questions-input">Max Questions</label>
+            <input id="max-questions-input" type="number" min="3" max="20" value="8" class="field-input" />
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="role-name-input">Role Name</label>
+          <input id="role-name-input" type="text" placeholder="e.g. Software Engineer" class="field-input" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="company-name-input">Company Name</label>
+          <input id="company-name-input" type="text" placeholder="e.g. Acme Corp" class="field-input" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="focus-areas-input">
+            Focus Areas
+            <span class="field-hint">comma-separated</span>
+          </label>
+          <input id="focus-areas-input" type="text" placeholder="e.g. React, Node.js, system design" class="field-input" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="jd-textarea">
+            Job Description <span class="required">*</span>
+            <span class="field-hint" id="char-count">0 chars</span>
+          </label>
+          <textarea
+            id="jd-textarea"
+            class="field-textarea"
+            rows="8"
+            placeholder="Paste the full job description here. The interviewer will tailor questions based on this role…"
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- Connect Button -->
+      <button id="connect-btn" class="btn btn-connect">
+        <span class="btn-icon">▶</span>
+        Start Interview
+      </button>
+
+      <!-- Session Controls (hidden until connected) -->
+      <div class="session-controls" id="session-controls" style="display:none">
+        <button id="mic-btn" class="btn btn-mic" disabled>
+          🎤 <span id="mic-status">Mic Off</span>
+        </button>
+        <button id="export-btn" class="btn btn-secondary">
+          ⬇ Export Transcript
+        </button>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ── Main Stage ─────────────────────────────────────────── -->
+  <main class="stage">
+
+    <!-- Top bar: session stats -->
+    <div class="topbar" id="topbar">
+      <div class="stat-pill" id="stat-status">
+        <span class="stat-dot dot-idle"></span>
+        <span id="status-text">Ready to start</span>
+      </div>
+      <div class="stat-pill" id="stat-timer" style="display:none">
+        <span>⏱</span>
+        <span id="timer-display">00:00</span>
+      </div>
+      <div class="stat-pill" id="stat-phase" style="display:none">
+        <span>📋</span>
+        <span id="phase-display">Introduction</span>
+      </div>
+      <div class="stat-pill" id="stat-questions" style="display:none">
+        <span>❓</span>
+        <span id="questions-display">0 / 0</span>
+      </div>
+    </div>
+
+    <!-- Avatar + Conversation side by side -->
+    <div class="content-grid">
+
+      <!-- Bot video panel -->
+      <div class="avatar-panel">
+        <div id="bot-video-container" class="avatar-video">
+          <div class="avatar-placeholder">
+            <div class="avatar-placeholder-icon">🤖</div>
+            <div class="avatar-placeholder-text">Interviewer will appear here</div>
+          </div>
+        </div>
+        <div class="avatar-label" id="avatar-label">Alex — AI Interviewer</div>
+        <div class="speaking-indicator" id="speaking-indicator">
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span>
+        </div>
+      </div>
+
+      <!-- Conversation -->
+      <div class="conversation-panel">
+        <div class="panel-header">
+          <span>Conversation</span>
+          <button class="icon-btn" id="clear-chat-btn" title="Clear chat">🗑</button>
+        </div>
+        <div id="conversation-log" class="conversation-log">
+          <div class="chat-placeholder">Start the interview to begin the conversation</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Events log (collapsible) -->
+    <details class="events-section" id="events-section">
+      <summary class="events-toggle">System Events</summary>
+      <div id="events-log" class="events-log"></div>
+    </details>
+
+  </main>
+
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>
