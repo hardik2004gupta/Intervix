@@ -1,4 +1,4 @@
-# 🤖 AI Interview Coach — Real-Time Voice Interaction
+# Intervix - The Real-Time AI Interview Coach
 
 A full-stack, production-ready AI interviewer built with **Pipecat**, **Groq LLM**, **Deepgram STT**, and **ElevenLabs TTS**. Practice interviews with a configurable AI interviewer through real-time voice interaction in your browser.
 
