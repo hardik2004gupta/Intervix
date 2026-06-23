@@ -86,7 +86,7 @@ class InterviewCoachClient {
     this.$exportBtn         = document.getElementById('export-btn');
     this.$clearChatBtn      = document.getElementById('clear-chat-btn');
 
-    this.$statusDot         = document.querySelector('.stat-dot');
+    this.$statusDot         = document.getElementById('hud-dot');
     this.$statusText        = document.getElementById('status-text');
     this.$statTimer         = document.getElementById('stat-timer');
     this.$timerDisplay      = document.getElementById('timer-display');
@@ -94,9 +94,14 @@ class InterviewCoachClient {
     this.$phaseDisplay      = document.getElementById('phase-display');
     this.$statQuestions     = document.getElementById('stat-questions');
     this.$questionsDisplay  = document.getElementById('questions-display');
+    this.$hudSep1           = document.getElementById('hud-sep1');
+    this.$hudSep2           = document.getElementById('hud-sep2');
 
     this.$botVideoContainer = document.getElementById('bot-video-container');
     this.$speakingIndicator = document.getElementById('speaking-indicator');
+    this.$agentDot          = document.getElementById('agent-dot');
+    this.$avatarIdle        = document.getElementById('avatar-idle');
+    this.$transcriptLive    = document.getElementById('transcript-live');
     this.$avatarLabel       = document.getElementById('avatar-label');
     this.$conversationLog   = document.getElementById('conversation-log');
     this.$eventsLog         = document.getElementById('events-log');
@@ -473,41 +478,40 @@ class InterviewCoachClient {
 
     this.client.on(RTVIEvent.BotStartedSpeaking, () => {
       this.$speakingIndicator.classList.add('active');
+    const agentDot = document.querySelector('.agent-status-dot'); if (agentDot) agentDot.classList.add('online');
     });
     this.client.on(RTVIEvent.BotStoppedSpeaking, () => {
       this.$speakingIndicator.classList.remove('active');
+    const agentDot2 = document.querySelector('.agent-status-dot'); if (agentDot2) agentDot2.classList.remove('online');
     });
   }
 
   _setupVideo(track) {
-    this.$botVideoContainer.innerHTML = '';
+    if (this.$avatarIdle) this.$avatarIdle.style.display = 'none';
+    const oldV = this.$botVideoContainer.querySelector('video');
+    if (oldV) { if (oldV.srcObject) oldV.srcObject.getTracks().forEach(t=>t.stop()); oldV.remove(); }
     const video = document.createElement('video');
-    video.autoplay = true;
-    video.playsInline = true;
-    video.muted = true;
+    video.autoplay = true; video.playsInline = true; video.muted = true;
     video.srcObject = new MediaStream([track]);
     this.$botVideoContainer.appendChild(video);
   }
 
   _clearVideo() {
     const video = this.$botVideoContainer.querySelector('video');
-    if (video?.srcObject) {
-      video.srcObject.getTracks().forEach((t) => t.stop());
-      video.srcObject = null;
-    }
-    this.$botVideoContainer.innerHTML = `
-      <div class="avatar-placeholder">
-        <div class="avatar-placeholder-icon">🤖</div>
-        <div class="avatar-placeholder-text">Interviewer offline</div>
-      </div>`;
+    if (video?.srcObject) { video.srcObject.getTracks().forEach(t=>t.stop()); video.srcObject = null; }
+    if (video) video.remove();
+    if (this.$avatarIdle) this.$avatarIdle.style.display = 'flex';
   }
 
   // ── Connection state updates ──────────────────────────────
 
   _onConnected() {
     this.isConnected = true;
-    this.$connectBtn.textContent = '⏹ End Interview';
     this.$connectBtn.classList.add('active');
+    const ll = this.$connectBtn.querySelector('.launch-label');
+    if (ll) { ll.textContent = 'End Session'; ll.style.color = 'var(--rose)'; }
+    const li = this.$connectBtn.querySelector('.launch-icon');
+    if (li) li.style.color = 'var(--rose)';
     this.$sessionControls.style.display = 'flex';
     this.$micBtn.disabled = false;
     this.$transportSelect.disabled = true;
@@ -517,32 +521,33 @@ class InterviewCoachClient {
     this._showSessionStats();
     this._updateQCounter();
     this._logEvent('connected', 'Session started');
-
-    // Clear placeholder
-    const ph = this.$conversationLog.querySelector('.chat-placeholder');
-    if (ph) ph.remove();
+    if (this.$transcriptLive) this.$transcriptLive.style.display = 'flex';
+    const empty = this.$conversationLog.querySelector('.empty-state, .chat-placeholder');
+    if (empty) empty.remove();
   }
 
   _onDisconnected() {
     this.isConnected = false;
-    this.$connectBtn.innerHTML = '<span class="btn-icon">▶</span> Start Interview';
     this.$connectBtn.classList.remove('active');
+    const ll = this.$connectBtn.querySelector('.launch-label');
+    if (ll) { ll.textContent = 'Initiate Session'; ll.style.color = 'var(--gold)'; }
+    const li = this.$connectBtn.querySelector('.launch-icon');
+    if (li) li.style.color = 'var(--gold)';
     this.$micBtn.disabled = true;
     this.$transportSelect.disabled = false;
     this._updateMicButton(false);
     this._clearVideo();
     this._stopTimer();
-    this._setStatus('Session ended', 'idle');
+    this._setStatus('Standby', 'idle');
     this.$speakingIndicator.classList.remove('active');
     this._logEvent('disconnected', `Duration: ${fmtTime(this._sessionSeconds)}`);
     toast(`Interview ended — ${fmtTime(this._sessionSeconds)} elapsed`, 'info', 4000);
-
-    // Clean up Web Audio
+    if (this.$transcriptLive) this.$transcriptLive.style.display = 'none';
+    if (this.$agentDot) this.$agentDot.classList.remove('online');
+    if (this.$avatarIdle) this.$avatarIdle.style.display = 'flex';
     this._attachedTrackId = null;
     if (this._audioSource) { try { this._audioSource.disconnect(); } catch (_) {} this._audioSource = null; }
     if (this._audioCtx)    { try { this._audioCtx.close(); }         catch (_) {} this._audioCtx = null; }
-
-    // Auto-save transcript to server (fire & forget)
     this._pushTranscript();
   }
 
@@ -561,13 +566,15 @@ class InterviewCoachClient {
   // ── UI helpers ────────────────────────────────────────────
 
   _setStatus(text, type = 'idle') {
-    this.$statusText.textContent = text;
-    this.$statusDot.className = 'stat-dot dot-' + type;
+    if (this.$statusText) this.$statusText.textContent = text;
+    if (this.$statusDot)  this.$statusDot.className = 'hud-dot dot-' + type;
   }
 
   _showSessionStats() {
     this.$statTimer.style.display = 'flex';
+    const s1=document.getElementById('hud-sep1'); if(s1) s1.style.display='block';
     this.$statPhase.style.display = 'flex';
+    const s2=document.getElementById('hud-sep2'); if(s2) s2.style.display='block';
     this.$statQuestions.style.display = 'flex';
   }
 
@@ -580,8 +587,12 @@ class InterviewCoachClient {
   }
 
   _updateMicButton(enabled) {
-    this.$micStatus.textContent = enabled ? 'Mic On' : 'Mic Off';
+    if (this.$micStatus) this.$micStatus.textContent = enabled ? 'Mic On' : 'Mic Off';
     this.$micBtn.classList.toggle('active', enabled);
+    if (this.$agentDot) {
+      if (enabled && this.isConnected) this.$agentDot.classList.add('online');
+      else this.$agentDot.classList.remove('online');
+    }
   }
 
   _detectPhase(text) {
@@ -615,12 +626,16 @@ class InterviewCoachClient {
     const ts = now();
     this._transcript.push({ role, text, ts });
 
+    // Remove empty/placeholder state on first message
+    const emptyEl = this.$conversationLog.querySelector('.empty-state, .chat-placeholder, .transcript-empty');
+    if (emptyEl) emptyEl.remove();
+
     const wrapper = document.createElement('div');
     wrapper.className = `chat-msg ${role}`;
 
     const roleEl = document.createElement('div');
     roleEl.className = 'msg-role';
-    roleEl.textContent = role === 'user' ? 'You' : 'Alex (AI)';
+    roleEl.textContent = role === 'user' ? 'Candidate' : 'Alex — AI Interviewer';
 
     const bubble = document.createElement('div');
     bubble.className = 'msg-bubble';
@@ -633,10 +648,17 @@ class InterviewCoachClient {
     wrapper.append(roleEl, bubble, timeEl);
     this.$conversationLog.appendChild(wrapper);
     this.$conversationLog.scrollTop = this.$conversationLog.scrollHeight;
+    const lb=document.getElementById('transcript-live'); if(lb && this.isConnected) lb.style.display='flex';
   }
 
   _clearChat() {
-    this.$conversationLog.innerHTML = '';
+    this.$conversationLog.innerHTML = `
+      <div class="empty-state">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+          <path d="M6 10h24M6 17h16M6 24h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".4"/>
+        </svg>
+        <span>Transcript cleared</span>
+      </div>`;
     this._transcript = [];
     this._logEvent('chat', 'Cleared');
   }
@@ -647,12 +669,12 @@ class InterviewCoachClient {
     const row = document.createElement('div');
     row.className = 'event-entry';
 
-    const ts   = document.createElement('span'); ts.className = 'ts';    ts.textContent = now();
-    const ename = document.createElement('span'); ename.className = 'ename'; ename.textContent = name;
-    const edata = document.createElement('span'); edata.className = 'edata';
-    edata.textContent = typeof data === 'string' ? data : JSON.stringify(data);
+    const ts   = document.createElement('span'); ts.className = 'event-ts';   ts.textContent = now();
+    const en   = document.createElement('span'); en.className = 'event-name'; en.textContent = name;
+    const ed   = document.createElement('span'); ed.className = 'event-data';
+    ed.textContent = typeof data === 'string' ? data : JSON.stringify(data);
 
-    row.append(ts, ename, edata);
+    row.append(ts, en, ed);
     this.$eventsLog.appendChild(row);
     this.$eventsLog.scrollTop = this.$eventsLog.scrollHeight;
   }

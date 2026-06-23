@@ -1,13 +1,12 @@
 {
   "botNature": "decent",
-  "jd": "Design, develop, and optimize embedded software and firmware for hardware devices and real-time systems. Work closely with hardware teams to build efficient, reliable, and low-level system solutions for products involving microcontrollers, IoT devices, and electronic systems.",
+  "jd": "The candidate is expected to design, scale, and maintain highly reliable distributed systems. The role involves gathering system requirements, defining scalable architectures, and writing resilient, maintainable code for systems operating at a massive, global scale.",
   "interviewType": "mixed",
   "difficulty": "mid",
-  "maxQuestions": 8,
+  "maxQuestions": 4,
   "focusAreas": [
-    "Embedded Systems",
-    "Microcontrollers"
+    "System Design"
   ],
-  "companyName": "Qualcomm",
-  "roleName": "Embedded Systems Engineer"
+  "companyName": "Google",
+  "roleName": "Software Engineer"
 }
